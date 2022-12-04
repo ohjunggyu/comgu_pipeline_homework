@@ -44,26 +44,146 @@ int labelToIntAddr(char *label);
 int immToInt(char *immediate);
 char *int2bin(int a, char *buffer, int buf_size);
 
+int ALU_operate(int op, int r1, int r2);
+int ALU_control(int op, int funct);
+
+int INIT_PC = 0x00400024;
+
+// IF/ID
+struct IF_ID{
+    int PC_IF;
+    int instruction;
+}IF;
+
+// ID/EX
+struct ID_EX{
+    ID_EX(){}
+    ID_EX(IF_ID tmp){
+        // R type
+        Func = tmp.instruction & ((1<<6) - 1);
+        shamt = (tmp.instruction>>6) & ((1<<5)-1);
+        Rd = (tmp.instruction>>11) & ((1<<5)-1);
+        Rt = (tmp.instruction>>16) & ((1<<5)-1);
+        Rs = (tmp.instruction>>21) & ((1<<5)-1);
+        op = (tmp.instruction>>26) & ((1<<6)-1);
+
+        // Register1,2
+        Register1 = datasection[Rs];
+        Register2 = datasection[Rt];
+
+        // ALUOp
+        switch(op){
+            case 0x23:  //lw
+                RegDst = 0;
+                //ALUScr = 1;
+                MemtoReg = 1;
+                RegWrite = 1;
+                //MemRead = 1;
+                //MemWrite = 0;
+                //Branch = 0;
+                ALUOp = 0;
+                break;
+                
+            case 0x2b:  //sw
+                //RegDst = X;
+                //ALUScr = 1;
+                //MemtoReg = X;
+                RegWrite = 0;
+                //MemRead = 1;
+                //MemWrite = 0;
+                //Branch = 0;
+                ALUOp = 0;
+                break;
+                
+            case 0x04:  //beq
+                //RegDst = X;
+                //ALUScr = 1
+                //MemtoReg = X;
+                RegWrite = 0;
+                //MemRead = 1
+                //MemWrite = 0
+                //Branch = 0
+                ALUOp = 1;
+                break;
+                
+            case 0:     // R format
+                RegDst = 1;
+                //ALUScr = 1
+                MemtoReg = 0;
+                RegWrite = 1;
+                //MemRead = 1
+                //MemWrite = 0
+                //Branch = 0
+                ALUOp = 2;
+                break;
+                
+        }
+
+        //Pipeline attribute
+        
+    }
+    int RegWrite, MemtoReg, ALUOp, RegDst;
+
+    int Register1;
+    int Register2;
+
+    int Func;
+    int Rs;
+    int Rt;
+    int Rd;
+
+    int op,shamt;
+}ID;
+
+// EX/MEM
+struct EX_MEM{
+    int ForwardA, ForwardB;
+    int RegWrite, MemtoReg;
+
+    int ALUResult;
+    int Operand2;
+    int RegisterRd;
+
+    EX_MEM(){}
+    EX_MEM(ID_EX tmp){
+        RegisterRd = tmp.RegDst ? tmp.Rd : tmp.Rt;
+        // Forwarding Unit !!!!
+        // ForwardA
+        // ForwardB
+        int r1,r2;
+        r1 = tmp.Register1;
+        r2 = tmp.Register2;
+        // ALU!
+        ALUResult = ALU_operate(ALU_control(tmp.op,tmp.Func),r1,r2);
+        Operand2 = r2;
+    }
+    
+    
+}EX;
+
+// MEM/WB
+struct MEM_WB{
+    int RegWrite;
+    
+    int MemData;
+    int ALUResult;
+}MEM;
+
 /************************ MAIN ************************/
 
 
-int main() {
+int main(/*int argc, const char * argv[]*/) {
     
-    /*
     
-    if (argv[1] == NULL) {
+    /*if (argv[1] == NULL) {
         printf("Please type in input file name.\n");
         return 0;
-    }
-    */
-    
+    }*/
+     
     char filename[20];
     //strcpy(filename, argv[1]);
     
-    strcpy(filename, "test.s");
-    //strcpy(filename, "example2_mod.s");
-    //strcpy(filename, "example3.s");
-    //strcpy(filename, "example4.s");
+    strcpy(filename, "example_1.s");
     
     int dataSectionSize = countDataSection(filename);
     scanLabels(filename);
@@ -86,7 +206,6 @@ int main() {
             } else {
                 char codeline[100];
                 strcpy(codeline, line.c_str());
-                //printf("%s\n",codeline);
                 assembleLine(codeline);
             }
         }
@@ -109,31 +228,37 @@ int main() {
     }
     outputfile.close();
     */
-    
     //FILE f = *fopen("output.o", "w");
-    freopen("output.o", "w", stdout);
+    freopen("output.o","w",stdout);
     char binary[40];
     int2bin(instr_index*4, binary, 32);
-    printf("%s\n",binary);
-    //fprintf(&f, "%s", binary);
+    printf("%s\n", binary);
     int2bin(dataSectionSize*4, binary, 32);
-    printf("%s\n",binary);
-    //fprintf(&f, "%s", binary);
+    printf("%s\n", binary);
     
-    int i;
+    int i=0;
+    while(1){
+        // MEM/WB
+        
+        // EX/MEM
+        EX = EX_MEM(ID);
+        // ID/EX
+        ID = ID_EX(IF);
+
+        // IF/ID
+        if(i<instr_index) 
+            IF = {INIT_PC + i*4, instructions[i++]};
+    }
     for (i=0; i<instr_index; i++) {
         int2bin(instructions[i], binary, 32);
-        printf("%s\n",binary);
-        //fprintf(&f, "%s", binary);
+        printf("%s\n", binary);
     }
     for (i=0; i<datasectionindex; i++) {
         int2bin(datasection[i], binary, 32);
-        printf("%s\n",binary);
-        //fprintf(&f, "%s", binary);
+        printf("%s\n", binary);
     }
-    //fprintf(&f, "\n");
+    //printf("\n");
     //fclose(&f);
-    
     return 0;
 }
 
@@ -147,15 +272,15 @@ void scanLabels(char *filename) {
     if (inputfile.is_open())
     {
         // finds the .data section and count the number of .word before .text section appears
-        while (getline(inputfile, line))
+        /*while (getline(inputfile, line))
         {
             if (strstr(line.c_str(),".data") != NULL){
                 break;
             }
-        }
+        }*/
         while (getline(inputfile, line)) {
             // Labels inside .data section.
-            if (strstr(line.c_str(),".word") != NULL){
+            /*if (strstr(line.c_str(),".word") != NULL){
                 label newLabel;
                 char temp[100];
                 strcpy(temp, line.c_str());
@@ -163,7 +288,7 @@ void scanLabels(char *filename) {
                 newLabel.location = 0x10000000+(datasizecnt)*4;
                 datasizecnt++;
                 label_list[labelindex++]=newLabel;
-            }
+            }*/
             if (strstr(line.c_str(),".text") != NULL){
                 break;
             }
@@ -216,50 +341,43 @@ int countDataSection(char *filename) {
     
     string line;
     ifstream inputfile(filename);
-    printf("datasection\n");
     if (inputfile.is_open())
     {
+        /*
         // finds the .data section and count the number of .word before .text section appears
         while (getline(inputfile, line))
         {
-            cout << line;
             if(strstr(line.c_str(),".data") != NULL){
                 break;
             }
         }
         while (getline(inputfile, line)) {
-            cout << line;
             if(strstr(line.c_str(),".text") != NULL){
                 break;
             }
             if(strstr(line.c_str(),".word") != NULL){
-                printf("1");
                 count++;
                 char * one;
                 char * two;
                 char * three;
                 char temp[100];
                 strcpy(temp, line.c_str());
-                printf("1");
+                
                 if (strstr(temp,":") != NULL) {
-                    printf("2");
                     one = strtok(temp,":");
                     two = strtok(NULL, " \t");
                     three = strtok(NULL, " \t");
                     datasection[datasectionindex++] = immToInt(three);
                 } else {
-                    printf("3");
                     one = strtok(temp, " \t");
-                    printf("1");
                     two = strtok(NULL, " \t");
-                    printf("1");
                     datasection[datasectionindex++] = immToInt(two);
-                    printf("1");
                 }
-            
+           
             }
         }
         inputfile.close();
+        */
     }
     else cout << "Unable to open file\n";
     return count;
@@ -285,7 +403,7 @@ void assembleLine(char *line){
         three = strtok(NULL,key);
     if(three != NULL)
         four = strtok(NULL,key);
-    printf("%s %s %s\n",two, three, four);
+    
     
     if (strcmp(one, "addiu") == 0) {
         // I-type
@@ -505,7 +623,32 @@ void makeJ_type(int op, int addr) {
     instructions[instr_index++] = ans;
 }
 
+int ALU_operate(int op, int r1, int r2){
+    switch (op)
+    {
+        case 0: return r1 & r2;
+        case 1: return r1 | r2;
+        case 2: return r1 + r2;
+        case 6: return r1 - r2;
+        case 7: return r1 < r2; // ????
+        case 12:return ~(r1 | r2);
+    }
+}
 
+int ALU_control(int op, int funct){
+    funct = 15 & funct;
+    if(op == 0){
+        return 2;   // 0010 AND
+    }else if(op == 1){
+        return 6;   // 0110 subtract
+    }else if(op == 2){
+        if(funct == 0) return 2;             // 0010 add
+        else if(funct == 2) return 6;        // 0110 subtract
+        else if(funct == 4) return 0;        // 0000 AND
+        else if(funct == 5) return 1;        // 0001 OR
+        else if(funct == 10) return 7;       // 0111 slt
+    }
+}
 
 
 
@@ -529,13 +672,9 @@ int labelToIntAddr(char *label) {
 
 int immToInt(char *immediate){
     // 2 cases - hexadecimal and decimal.
-    printf("????");
-    printf("%s",immediate);
     if (strstr(immediate,"0x") != NULL) {
-        printf("asdf");
         return (int)strtol(immediate, NULL, 0);
     } else {
-        printf("ang");
         return atoi(immediate);
     }
 }
