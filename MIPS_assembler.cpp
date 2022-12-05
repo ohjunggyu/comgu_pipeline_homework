@@ -57,6 +57,17 @@ struct IF_ID{
 
 // ID/EX
 struct ID_EX{
+    int RegWrite, MemtoReg, ALUOp, RegDst;
+
+    int Register1;
+    int Register2;
+
+    int Func;
+    int Rs;
+    int Rt;
+    int Rd;
+
+    int op,shamt;
     ID_EX(){}
     ID_EX(IF_ID tmp){
         // R type
@@ -122,17 +133,6 @@ struct ID_EX{
         //Pipeline attribute
         
     }
-    int RegWrite, MemtoReg, ALUOp, RegDst;
-
-    int Register1;
-    int Register2;
-
-    int Func;
-    int Rs;
-    int Rt;
-    int Rd;
-
-    int op,shamt;
 }ID;
 
 // EX/MEM
@@ -164,9 +164,21 @@ struct EX_MEM{
 // MEM/WB
 struct MEM_WB{
     int RegWrite;
-    
+    int MemtoReg;
+
     int MemData;
     int ALUResult;
+    int RegisterRd;
+
+    MEM_WB(){}
+    MEM_WB(EX_MEM tmp){
+        RegWrite = tmp.RegWrite;
+        MemtoReg = tmp.MemtoReg;
+        
+        //MemData = ?
+        ALUResult = tmp.ALUResult;
+        RegisterRd = tmp.RegisterRd;
+    }
 }MEM;
 
 /************************ MAIN ************************/
@@ -239,15 +251,19 @@ int main(/*int argc, const char * argv[]*/) {
     int i=0;
     while(1){
         // MEM/WB
-        
+        MEM = MEM_WB(EX);
+
         // EX/MEM
+        // ForwardA,B!!!!
         EX = EX_MEM(ID);
+        
         // ID/EX
         ID = ID_EX(IF);
 
         // IF/ID
         if(i<instr_index) 
             IF = {INIT_PC + i*4, instructions[i++]};
+        
     }
     for (i=0; i<instr_index; i++) {
         int2bin(instructions[i], binary, 32);
