@@ -16,18 +16,20 @@ using namespace std;
 // data structures
 struct label {
     char name[100];
-    int32_t location;
+    int location;
 };
 
 // Global variables
 label label_list[100];
 int labelindex = 0;
 
-int32_t instructions[1000];
+int instructions[1000];
 int instr_index = 0;
 
-int32_t datasection[1000];
+int datasection[1000];
 int datasectionindex = 0;
+
+int Regsection[32];
 
 // functions
 void scanLabels(char *filename);
@@ -49,138 +51,250 @@ int ALU_control(int op, int funct);
 
 int INIT_PC = 0x00400024;
 
+int ForwardA, ForwardB;
 // IF/ID
 struct IF_ID{
-    int PC_IF;
+    // Flush가 1이면 0!!
+    int PC;
     int instruction;
+    IF_ID(){}
+    IF_ID(int PC_, int instruction_){
+        PC = PC_;
+        instruction = instruction_;
+    }
 }IF;
 
 // ID/EX
 struct ID_EX{
-    int RegWrite, MemtoReg, ALUOp, RegDst;
+    int Branch;
+    int ALUSrc, ALUOp, RegDst;
+    int MemWrite, MemRead;
+    int RegWrite, MemtoReg;
+
+    int PC;
 
     int Register1;
     int Register2;
 
-    int Func;
-    int Rs;
-    int Rt;
-    int Rd;
+    int inst;       // 15:0
+    int Rs;         // 25:21
+    int Rt;         // 20:16
+    int Rd;         // 15:11
 
-    int op,shamt;
+    int op,shamt,Func,Rs;
     ID_EX(){}
-    ID_EX(IF_ID tmp){
-        // R type
-        Func = tmp.instruction & ((1<<6) - 1);
-        shamt = (tmp.instruction>>6) & ((1<<5)-1);
+    ID_EX(IF_ID tmp){        
+        PC = tmp.PC;
+
+        inst = (tmp.instruction) & ((1<<16)-1);
+        
+        Rs = (tmp.instruction>>21) & ((1<<5)-1);
         Rd = (tmp.instruction>>11) & ((1<<5)-1);
         Rt = (tmp.instruction>>16) & ((1<<5)-1);
-        Rs = (tmp.instruction>>21) & ((1<<5)-1);
+
+        Func = tmp.instruction & ((1<<6) - 1);
+        shamt = (tmp.instruction>>6) & ((1<<5)-1);
         op = (tmp.instruction>>26) & ((1<<6)-1);
 
         // Register1,2
-        Register1 = datasection[Rs];
-        Register2 = datasection[Rt];
+        Register1 = Regsection[Rs]; //datasection[Rs];
+        Register2 = Regsection[Rt]; //datasection[Rt];
 
         // ALUOp
         switch(op){
+            // RegDst
+            // ALUSrc
+            // MemtoReg
+            // RegWrite
+            // MemRead
+            // MemWrite
+            // Branch
+            // ALUOp
             case 0x23:  //lw
                 RegDst = 0;
-                //ALUScr = 1;
+                ALUSrc = 1;
                 MemtoReg = 1;
                 RegWrite = 1;
-                //MemRead = 1;
-                //MemWrite = 0;
-                //Branch = 0;
+                MemRead = 1;
+                MemWrite = 0;
+                Branch = 0;
                 ALUOp = 0;
                 break;
                 
             case 0x2b:  //sw
-                //RegDst = X;
-                //ALUScr = 1;
-                //MemtoReg = X;
+                // RegDst
+                ALUSrc = 1;
+                // MemtoReg
                 RegWrite = 0;
-                //MemRead = 1;
-                //MemWrite = 0;
-                //Branch = 0;
+                MemRead = 0;
+                MemWrite = 1;
+                Branch = 0;
                 ALUOp = 0;
                 break;
                 
             case 0x04:  //beq
-                //RegDst = X;
-                //ALUScr = 1
-                //MemtoReg = X;
+                // RegDst
+                ALUSrc = 0;
+                // MemtoReg
                 RegWrite = 0;
-                //MemRead = 1
-                //MemWrite = 0
-                //Branch = 0
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 1;
                 ALUOp = 1;
                 break;
                 
-            case 0:     // R format
+            case 0:     //R
                 RegDst = 1;
-                //ALUScr = 1
+                ALUSrc = 0;
                 MemtoReg = 0;
                 RegWrite = 1;
-                //MemRead = 1
-                //MemWrite = 0
-                //Branch = 0
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 0;
                 ALUOp = 2;
                 break;
-                
-        }
+            
+            case 8:     // addi
+                Func = 32;  // 100000
+                RegDst = 1;
+                ALUSrc = 0;
+                MemtoReg = 0;
+                RegWrite = 1;
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 0;
+                ALUOp = 2;
+                break;
+    
+            case 10:    // slti
+                Func = 42;  // 101010
+                RegDst = 1;
+                ALUSrc = 0;
+                MemtoReg = 0;
+                RegWrite = 1;
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 0;
+                ALUOp = 2;
+                break;
+    
+            case 12:    // andi
+                Func = 36;  // 100100
+                RegDst = 1;
+                ALUSrc = 0;
+                MemtoReg = 0;
+                RegWrite = 1;
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 0;
+                ALUOp = 2;
+                break;
+    
+            case 13:    // ori
+                Func = 37;  // 100101
+                RegDst = 1;
+                ALUSrc = 0;
+                MemtoReg = 0;
+                RegWrite = 1;
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 0;
+                ALUOp = 2;
+                break;
+            
+            // and/or/add/sub/slt/lw/sw/beq/j
+            // 13 ori, 9 addiu, 12 andi
+            
+            // ALUSrc = (I format이면 1 아니면 0)
+            // PCSrc = j 또는 slt일때 (Branch랑 Zero랑 And 연산??)
+            // Branch = ??
 
-        //Pipeline attribute
-        
+            // MemRead
+            // MemWrite
+        }       
     }
 }ID;
 
 // EX/MEM
 struct EX_MEM{
-    int ForwardA, ForwardB;
-    int RegWrite, MemtoReg;
+    int ALUSrc, RegDst, ALUOp;
+    int RegWrite, MemtoReg, MemRead, MemWrite;
 
     int ALUResult;
-    int Operand2;
+    int Register2;
     int RegisterRd;
 
     EX_MEM(){}
     EX_MEM(ID_EX tmp){
+        ALUSrc = tmp.ALUSrc;
+        RegDst = tmp.RegDst;
+        ALUOp = tmp.ALUOp;
+
+        RegWrite = tmp.RegWrite;
+        MemtoReg = tmp.MemtoReg;
+        MemRead = tmp.MemRead;
+        MemWrite = tmp.MemWrite;
+
         RegisterRd = tmp.RegDst ? tmp.Rd : tmp.Rt;
-        // Forwarding Unit !!!!
-        // ForwardA
-        // ForwardB
+
+        // Forwarding!
+        Forwarding_Unit(tmp.Rs, tmp.Rt);
         int r1,r2;
-        r1 = tmp.Register1;
-        r2 = tmp.Register2;
+
+        r1 = (ForwardA) ? ForwardA : tmp.Register1;
+        r2 = (ForwardB) ? ForwardB : ((tmp.ALUSrc) ? tmp.inst : tmp.Register2);
+        
         // ALU!
         ALUResult = ALU_operate(ALU_control(tmp.op,tmp.Func),r1,r2);
-        Operand2 = r2;
-    }
-    
-    
+        Register2 = tmp.Register2;
+    }    
 }EX;
 
 // MEM/WB
 struct MEM_WB{
-    int RegWrite;
-    int MemtoReg;
+    int RegWrite, MemtoReg, MemRead, MemWrite;
 
-    int MemData;
+    int Register2;
     int ALUResult;
     int RegisterRd;
+
+    int result;
 
     MEM_WB(){}
     MEM_WB(EX_MEM tmp){
         RegWrite = tmp.RegWrite;
         MemtoReg = tmp.MemtoReg;
+        MemRead = tmp.MemRead;
+        MemWrite = tmp.MemWrite;
         
-        //MemData = ?
+        Register2 = tmp.Register2;
         ALUResult = tmp.ALUResult;
         RegisterRd = tmp.RegisterRd;
+
+        if(MemWrite){
+            datasection[ALUResult] = Register2;
+        }
+        if(RegWrite){
+            Regsection[RegisterRd] = (MemtoReg) ? datasection[ALUResult] : ALUResult; // MemtoReg가 1이면 mem 0이면 ALURes
+        }
     }
 }MEM;
 
+void Forwarding_Unit(int Rs, int Rt){
+    int exdst, exwrite, memdst, memwrite;
+    exdst = EX.RegisterRd;
+    exwrite = EX.RegWrite;
+
+    ForwardA = 0;
+    if(Rs == memdst && memwrite) ForwardA = EX.ALUResult;
+    if(Rs == exdst && exwrite) ForwardA = MEM.result;
+
+    memdst = MEM.RegisterRd;
+    memwrite = MEM.RegWrite;
+    ForwardB = 0;
+    if(Rt == memdst && memwrite) ForwardB = EX.ALUResult;
+    if(Rt == exdst && exwrite) ForwardB = MEM.result;
+}
 /************************ MAIN ************************/
 
 
@@ -248,21 +362,27 @@ int main(/*int argc, const char * argv[]*/) {
     int2bin(dataSectionSize*4, binary, 32);
     printf("%s\n", binary);
     
-    int i=0;
+    int i=0, PC = INIT_PC;
     while(1){
+
         // MEM/WB
-        MEM = MEM_WB(EX);
+        MEM_WB MEM_ = MEM_WB(EX);
 
         // EX/MEM
-        // ForwardA,B!!!!
-        EX = EX_MEM(ID);
+        EX_MEM EX_ = EX_MEM(ID);
         
         // ID/EX
-        ID = ID_EX(IF);
+        ID_EX ID_ = ID_EX(IF);
 
         // IF/ID
+        IF_ID IF_ = {0,0};
         if(i<instr_index) 
-            IF = {INIT_PC + i*4, instructions[i++]};
+            IF_ = {INIT_PC + i*4, instructions[i++]};
+        
+        MEM = MEM_;
+        EX = EX_;
+        ID = ID_;
+        IF = IF_;
         
     }
     for (i=0; i<instr_index; i++) {
@@ -421,12 +541,12 @@ void assembleLine(char *line){
         four = strtok(NULL,key);
     
     
-    if (strcmp(one, "addiu") == 0) {
+    if (strcmp(one, "addi") == 0) {
         // I-type
-        // addiu $t,$s,C
+        // addi $t,$s,C
         // $t = $s + C (unsigned)
         // R[rt] = R[rs] + SignExtImm
-        makeI_type(9, regToInt(three), regToInt(two), immToInt(four));
+        makeI_type(8, regToInt(three), regToInt(two), immToInt(four));
         
     } else if (strcmp(one, "addu") == 0) {
         // R-type
@@ -541,7 +661,13 @@ void assembleLine(char *line){
         // R[rd] = R[rs] | R[rt]
         makeR_type(0, regToInt(three), regToInt(four), regToInt(two), 0, 37);
         
-    } else if (strcmp(one, "sltiu") == 0) {
+    }else if (strcmp(one, "slti") == 0) {
+        // I-type
+        // sltiu $t,$s,C
+        // R[rt] = (R[rs] < SignExtImm) ? 1 :0
+        makeI_type(10, regToInt(three), regToInt(two), immToInt(four));
+        
+    }else if (strcmp(one, "sltiu") == 0) {
         // I-type
         // sltiu $t,$s,C
         // R[rt] = (R[rs] < SignExtImm) ? 1 :0
@@ -576,12 +702,12 @@ void assembleLine(char *line){
         char * rs = strtok(NULL,"()");
         makeI_type(43, regToInt(rs), regToInt(two), immToInt(offset));
         
-    } else if (strcmp(one, "subu") == 0) {
+    } else if (strcmp(one, "sub") == 0) {
         // R-type
-        // subu $d,$s,$t
+        // sub $d,$s,$t
         // $d = $s - $t
         // R[rd] = R[rs] - R[rt]
-        makeR_type(0, regToInt(three), regToInt(four), regToInt(two), 0, 35);
+        makeR_type(0, regToInt(three), regToInt(four), regToInt(two), 0, 34);
     }
 }
 
@@ -613,7 +739,7 @@ void assembleLine(char *line){
 
 
 void makeR_type(int op, int rs, int rt, int rd, int shamt, int funct) {
-    int32_t ans = 0;
+    int ans = 0;
     ans = (op << 26);
     ans |= (rs << 21);
     ans |= (rt << 16);
@@ -624,7 +750,7 @@ void makeR_type(int op, int rs, int rt, int rd, int shamt, int funct) {
 }
 
 void makeI_type(int op, int rs, int rt, int addr) {
-    int32_t ans = 0;
+    int ans = 0;
     ans = (op << 26);
     ans |= (rs << 21);
     ans |= (rt << 16);
@@ -633,7 +759,7 @@ void makeI_type(int op, int rs, int rt, int addr) {
 }
 
 void makeJ_type(int op, int addr) {
-    int32_t ans = 0;
+    int ans = 0;
     ans = (op << 26);
     ans |= addr;
     instructions[instr_index++] = ans;
