@@ -49,9 +49,15 @@ char *int2bin(int a, char *buffer, int buf_size);
 int ALU_operate(int op, int r1, int r2);
 int ALU_control(int op, int funct);
 
-int INIT_PC = 0x00400024;
+void Forwarding_Unit(int Rs, int Rt);
+void Hazard_detection(IF_ID IF_, ID_EX ID_, EX_MEM EX_);
 
+
+int INIT_PC = 0x00400024;
+// Hazard
 int ForwardA, ForwardB;
+int PCWrite, IF_IDWrite, ControlMUX;
+int IF_Flush, PC_;
 // IF/ID
 struct IF_ID{
     // Flush가 1이면 0!!
@@ -87,6 +93,7 @@ struct ID_EX{
         PC = tmp.PC;
 
         inst = (tmp.instruction) & ((1<<16)-1);
+        for(int i=16;i<32;i++) inst |= (inst & (1<<15)); // sign_extend
         
         Rs = (tmp.instruction>>21) & ((1<<5)-1);
         Rd = (tmp.instruction>>11) & ((1<<5)-1);
@@ -141,6 +148,11 @@ struct ID_EX{
                 MemWrite = 0;
                 Branch = 1;
                 ALUOp = 1;
+
+                if(Register1 == Register2){
+                    IF_Flush = 1;
+                    PC_ = PC + (inst << 2);
+                }
                 break;
                 
             case 0:     //R
@@ -202,6 +214,22 @@ struct ID_EX{
                 ALUOp = 2;
                 break;
             
+            case 2: // J
+                Func = 0;
+                RegDst = 0;
+                ALUSrc = 0;
+                MemtoReg = 0;
+                RegWrite = 0;
+                MemRead = 0;
+                MemWrite = 0;
+                Branch = 1;
+                
+                PC_ = PC + (inst << 2);
+                IF_Flush = 1;
+
+                ALUOp = 2;
+                break;
+
             // and/or/add/sub/slt/lw/sw/beq/j
             // 13 ori, 9 addiu, 12 andi
             
@@ -297,6 +325,13 @@ void Forwarding_Unit(int Rs, int Rt){
 }
 /************************ MAIN ************************/
 
+void Hazard_detection(IF_ID IF_, ID_EX ID_, EX_MEM EX_){
+    if(EX_.MemRead && (ID_.Rs == ID.Rt || ID_.Rt == ID.Rt)){
+        PCWrite = IF_IDWrite = ControlMUX = 0;
+    }else{
+        PCWrite = IF_IDWrite = ControlMUX = 1;
+    }
+}
 
 int main(/*int argc, const char * argv[]*/) {
     
@@ -376,13 +411,19 @@ int main(/*int argc, const char * argv[]*/) {
 
         // IF/ID
         IF_ID IF_ = {0,0};
-        if(i<instr_index) 
-            IF_ = {INIT_PC + i*4, instructions[i++]};
+        if(IF_Flush == 1){
+            i = PC_/4;
+            IF_Flush = 0;
+        }
+        else if(i<instr_index) 
+            IF_ = {i*4, instructions[i++]};
         
+        Hazard_detection(IF_, ID_, EX_);
         MEM = MEM_;
         EX = EX_;
-        ID = ID_;
-        IF = IF_;
+        if(ControlMUX == 0) EX.MemRead = EX.MemWrite = EX.RegWrite = 0;
+        if(IF_IDWrite) ID = ID_;
+        if(PCWrite) IF = IF_;
         
     }
     for (i=0; i<instr_index; i++) {
@@ -775,6 +816,7 @@ int ALU_operate(int op, int r1, int r2){
         case 7: return r1 < r2; // ????
         case 12:return ~(r1 | r2);
     }
+    return 0;
 }
 
 int ALU_control(int op, int funct){
@@ -790,6 +832,7 @@ int ALU_control(int op, int funct){
         else if(funct == 5) return 1;        // 0001 OR
         else if(funct == 10) return 7;       // 0111 slt
     }
+    return -1;
 }
 
 
